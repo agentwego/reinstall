@@ -66,7 +66,7 @@ trap_err() {
 }
 
 is_run_from_locald() {
-    [[ "$0" = /etc/local.d/* ]]
+    [[ "$0" = "/etc/local.d/*" ]]
 }
 
 add_community_repo() {
@@ -413,31 +413,6 @@ extract_env_from_cmdline() {
             fi
         done < <(xargs -n1 </proc/cmdline | grep "^${prefix}_" | sed "s/^${prefix}_//")
     done
-}
-
-fix_confhome_if_needed() {
-    case "$confhome" in
-    file://*)
-        local path=${confhome#file://}
-        if ! [ -d "$path" ]; then
-            warn "cmdline confhome not found in installer environment: $confhome"
-            if is_in_china; then
-                confhome=$DEFAULT_CONFHOME_CN
-            else
-                confhome=$DEFAULT_CONFHOME
-            fi
-            warn "fallback confhome: $confhome"
-        fi
-        ;;
-    esac
-}
-
-start_console_log_mirror() {
-    # local service 场景下日志默认只写 /reinstall.log，控制台看起来像“卡住”。
-    # 这里将日志同步到 /dev/console，便于观察进度，失败时也能看到最后一步。
-    if [ -c /dev/console ]; then
-        tail -fn+1 /reinstall.log >/dev/console 2>/dev/null &
-    fi
 }
 
 ensure_service_started() {
@@ -7587,12 +7562,10 @@ rm -f /etc/runlevels/default/local
 
 # 提取变量
 extract_env_from_cmdline
-fix_confhome_if_needed
 
 # 尽早开启日志，避免 local service 失败时没有有效报错信息
 # 仅重定向到文件，避免在 /bin/ash 下使用进程替换语法
 exec >>/reinstall.log 2>&1
-start_console_log_mirror
 
 # 带参数运行部分
 # 重新下载并 exec 运行新脚本

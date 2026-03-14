@@ -9,8 +9,6 @@ set -eE
 confhome=https://raw.githubusercontent.com/bin456789/reinstall/main
 confhome_cn=https://cnb.cool/bin456789/reinstall/-/git/raw/main
 # confhome_cn=https://www.ghproxy.cc/https://raw.githubusercontent.com/bin456789/reinstall/main
-default_confhome=$confhome
-default_confhome_cn=$confhome_cn
 
 # 用于判断 reinstall.sh 和 trans.sh 是否兼容
 SCRIPT_VERSION=4BACD833-A585-23BA-6CBB-9AA4E08E0004
@@ -107,7 +105,6 @@ Usage: $reinstall_____ anolis      7|8|23
                        [--ssh-key   KEY]
                        [--ssh-port  PORT]
                        [--web-port  PORT]
-                       [--confhome  URL_OR_DIR]
                        [--frpc-config PATH]
 
                        For Windows Only:
@@ -3293,11 +3290,7 @@ build_extra_cmdline() {
     for key in confhome hold force_boot_mode force_cn force_old_windows_setup cloud_image main_disk \
         elts deb_mirror \
         ssh_port rdp_port web_port allow_ping; do
-        if [ "$key" = confhome ] && [ -n "$confhome_for_cmdline" ]; then
-            value=$confhome_for_cmdline
-        else
-            value=${!key}
-        fi
+        value=${!key}
         if [ -n "$value" ]; then
             is_need_quote "$value" &&
                 extra_cmdline+=" extra_$key='$value'" ||
@@ -4182,25 +4175,13 @@ init_confhome() {
     # gitee 不支持ipv6
     # jsdelivr 有12小时缓存
     # https://github.com/XIU2/UserScript/blob/master/GithubEnhanced-High-Speed-Download.user.js#L31
-    if [ -z "$custom_confhome" ] && is_in_china; then
+    if is_in_china; then
         if [ -n "$confhome_cn" ]; then
             confhome=$confhome_cn
         elif [ -n "$github_proxy" ] && [[ "$confhome" = http*://raw.githubusercontent.com/* ]]; then
             confhome=${confhome/http:\/\//https:\/\/}
             confhome=${confhome/https:\/\/raw.githubusercontent.com/$github_proxy}
         fi
-    fi
-
-    # 本地目录 confhome 仅用于当前系统构建 initrd。
-    # 安装环境无法直接访问宿主机目录，因此 cmdline 里回退到在线 confhome。
-    confhome_for_cmdline=$confhome
-    if [[ "$confhome" = file://* ]]; then
-        if is_in_china && [ -n "$default_confhome_cn" ]; then
-            confhome_for_cmdline=$default_confhome_cn
-        else
-            confhome_for_cmdline=$default_confhome
-        fi
-        warn false "Local --confhome is build-time only. Runtime fallback confhome: $confhome_for_cmdline"
     fi
 }
 
@@ -4475,7 +4456,6 @@ for o in ci installer debug minimal allow-ping force-cn help \
     web-port: http-port: \
     allow-ping: \
     commit: \
-    confhome: \
     frpc-conf: frpc-config: frpc-toml: \
     target-disk: \
     force-boot-mode: \
@@ -4539,27 +4519,6 @@ while true; do
         ;;
     --commit)
         commit=$2
-        shift 2
-        ;;
-    --confhome)
-        [ -n "$2" ] || error_and_exit "Need value for $1"
-        case "$2" in
-        http://* | https://* | file://*)
-            confhome=$2
-            ;;
-        *)
-            # 支持传本地目录路径
-            local_confhome=$(get_unix_path "$2")
-            local_confhome=$(readlink -f "$local_confhome")
-            if ! [ -d "$local_confhome" ]; then
-                error_and_exit "Invalid --confhome: $2"
-            fi
-            confhome="file://$local_confhome"
-            ;;
-        esac
-        custom_confhome=1
-        # 指定 confhome 时，默认不再自动切换到 confhome_cn
-        confhome_cn=
         shift 2
         ;;
     -x | --debug)

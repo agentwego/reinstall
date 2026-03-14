@@ -1,0 +1,27 @@
+version: '3'
+
+tasks:
+  serve:
+    desc: Serve the repository root over HTTP for local confhome testing
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - HOST="${HOST:-0.0.0.0}" PORT="${PORT:-8000}" ./scripts/serve-confhome.sh
+
+  patch-confhome:
+    desc: Patch reinstall.sh and trans.sh to use a local confhome
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - HOST_IP="${HOST_IP:-10.0.2.2}" PORT="${PORT:-8000}" CONFHOME_URL="${CONFHOME_URL:-}" CONFHOME_CN_URL="${CONFHOME_CN_URL:-}" ./scripts/patch-confhome.sh
+
+  restore-confhome:
+    desc: Restore confhome constants after a local test run
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - ./scripts/restore-confhome.sh
+
+  talos:
+    desc: Launch the Talos KVM profile
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - CONFIG="${CONFIG:-./kvm/talos.env}" ./scripts/run-kvm.sh
+
