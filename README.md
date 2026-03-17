@@ -182,7 +182,8 @@ bash reinstall.sh anolis      7|8|23
 
 - 安装 Talos 时默认会先解析官方最新版本号（例如 `v1.12.4`），再使用固定版本链接下载官方 `metal-ARCH.raw.zst` 镜像（兼容回退 `raw.xz`）；默认不支持 SSH 登录，请使用 `talosctl` 管理节点
 - Talos 默认不会交互询问密码；当未传 `--password`/`--ssh-key` 时，会自动生成随机密码用于安装环境 SSH
-- Talos 仅支持安装环境参数：`--password`、`--ssh-key`、`--ssh-port`、`--web-port`、`--hold`、`--frpc-toml`
+- Talos 仅支持安装环境参数：`--password`、`--ssh-key`、`--ssh-port`、`--web-port`、`--hold`、`--frpc-toml`、`--talos-siderolink`
+- Talos 支持 `--talos-siderolink` 注入 `siderolink.api` 内核参数。脚本会改为通过 Talos Image Factory 生成定制 `metal-ARCH.raw.zst` 镜像，用于首启自动接入 Omni / SideroLink
 - Talos 不支持：`--minimal`、`--installer`、`--allow-ping`、`--rdp-port`、`--add-driver`、`--img`、`--cloud-data`、`--iso`、`--boot-wim`、`--image-name`、`--lang`、`--force-old-windows-setup`
 
 #### 可选参数
@@ -192,6 +193,7 @@ bash reinstall.sh anolis      7|8|23
 - `--ssh-port PORT` 修改 SSH 端口（安装期间观察日志用，也作用于新系统）
 - `--web-port PORT` 修改 Web 端口（安装期间观察日志用）
 - `--frpc-config PATH` 添加 frpc 内网穿透，参数填配置文件的本地路径或 HTTP 链接
+- `--talos-siderolink URL` 仅 Talos 可用，注入完整的 SideroLink 地址，例如 `grpc://omni.example.com:8090?jointoken=...`
 - `--hold 1` 仅重启到安装环境，不运行安装，用于 SSH 登录验证网络连通性
 - `--hold 2` 安装结束后不重启，用于 SSH 登录修改系统内容，Debian/Kali 会挂载在 `/target`，其它系统会挂载在 `/os`
 

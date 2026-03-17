@@ -106,6 +106,7 @@ Usage: $reinstall_____ anolis      7|8|23
                        [--ssh-port  PORT]
                        [--web-port  PORT]
                        [--frpc-config PATH]
+                       [--talos-siderolink URL]
 
                        For Windows Only:
                        [--allow-ping]
@@ -1738,10 +1739,38 @@ Continue with DD?
             curl --connect-timeout 5 --max-time 12 -fsIL -o /dev/null "$1"
         }
 
+        build_talos_factory_img() {
+            local talos_version_tag=$1
+            local talos_arch=$2
+            local siderolink_value=$3
+            local schematic_yaml schematic_id
+
+            siderolink_value=${siderolink_value//\'/\'\'}
+            schematic_yaml=$(cat <<EOF
+customization:
+  extraKernelArgs:
+    - 'siderolink.api=$siderolink_value'
+EOF
+)
+
+            schematic_id=$(
+                curl --connect-timeout 10 --max-time 30 -fsSL \
+                    -X POST \
+                    -H 'Content-Type: application/yaml' \
+                    --data-binary "$schematic_yaml" \
+                    https://factory.talos.dev/schematics |
+                    grep -oE '"id":"[a-f0-9]+"' | cut -d'"' -f4 | grep .
+            ) || error_and_exit "Failed to create Talos Image Factory schematic."
+
+            echo "https://factory.talos.dev/image/$schematic_id/$talos_version_tag/metal-$talos_arch.raw.zst"
+        }
+
         talos_img=
+        talos_version_tag=
         if [ -n "$releasever" ]; then
             releasever=${releasever#v}
             eval ${step}_releasever=$releasever
+            talos_version_tag=v$releasever
             talos_img_prefix="https://github.com/siderolabs/talos/releases/download/v$releasever/metal-$basearch_alt"
         else
             # 优先解析最新 tag，并使用固定版本下载链接，避免依赖 latest/download
@@ -1750,6 +1779,7 @@ Continue with DD?
                     grep -m1 '"tag_name":' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | grep .
             ); then
                 eval ${step}_releasever=${latest_talos_tag#v}
+                talos_version_tag=$latest_talos_tag
                 talos_img_prefix="https://github.com/siderolabs/talos/releases/download/$latest_talos_tag/metal-$basearch_alt"
             else
                 talos_img_prefix="https://github.com/siderolabs/talos/releases/latest/download/metal-$basearch_alt"
@@ -1776,7 +1806,14 @@ Continue with DD?
                     grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | grep .
             ); then
                 eval ${step}_releasever=${tag#v}
+                talos_version_tag=$tag
             fi
+        fi
+
+        if [ -n "$talos_siderolink" ]; then
+            [ -n "$talos_version_tag" ] || error_and_exit "Failed to resolve Talos version for Image Factory."
+            info false "Build Talos Image Factory image with SideroLink kernel args..."
+            talos_img=$(build_talos_factory_img "$talos_version_tag" "$basearch_alt" "$talos_siderolink")
         fi
 
         eval ${step}_img="$talos_img"
@@ -1986,33 +2023,33 @@ Continue with DD?
     fi
 
     # 集中测试云镜像格式
-    if is_use_cloud_image && [ "$step" = finalos ]; then
-        # Talos 镜像后缀固定，避免走 file_enhanced 触发安装 zstd 并拖慢流程
-        if [ "$distro" = talos ]; then
-            case "$finalos_img" in
-            *.raw.zst | *.raw.zstd)
-                finalos_img_type=raw
-                finalos_img_type_warp=zstd
-                ;;
-            *.raw.xz)
-                finalos_img_type=raw
-                finalos_img_type_warp=xz
-                ;;
-            *)
-                # 异常后缀时回退通用检测
+        if is_use_cloud_image && [ "$step" = finalos ]; then
+            # Talos 镜像后缀固定，避免走 file_enhanced 触发安装 zstd 并拖慢流程
+            if [ "$distro" = talos ]; then
+                case "$finalos_img" in
+                *.raw.zst | *.raw.zstd)
+                    finalos_img_type=raw
+                    finalos_img_type_warp=zstd
+                    ;;
+                *.raw.xz)
+                    finalos_img_type=raw
+                    finalos_img_type_warp=xz
+                    ;;
+                *)
+                    # 异常后缀时回退通用检测
+                    # shellcheck disable=SC2154
+                    test_url $finalos_img 'qemu qemu.gzip qemu.xz qemu.zstd raw.xz raw.zstd' finalos_img_type
+                    return
+                    ;;
+                esac
+
+                # 仅做可访问性检查
+                test_url $finalos_img
+            else
                 # shellcheck disable=SC2154
                 test_url $finalos_img 'qemu qemu.gzip qemu.xz qemu.zstd raw.xz raw.zstd' finalos_img_type
-                return
-                ;;
-            esac
-
-            # 仅做可访问性检查
-            test_url $finalos_img
-        else
-            # shellcheck disable=SC2154
-            test_url $finalos_img 'qemu qemu.gzip qemu.xz qemu.zstd raw.xz raw.zstd' finalos_img_type
+            fi
         fi
-    fi
 }
 
 is_distro_like_redhat() {
@@ -2122,6 +2159,10 @@ verify_os_args() {
     case "$distro" in
     netboot.xyz | windows) [ -z "$ssh_keys" ] || error_and_exit "not support ssh key for $distro" ;;
     esac
+
+    if [ -n "$talos_siderolink" ] && [ "$distro" != talos ]; then
+        error_and_exit "--talos-siderolink is only supported for talos"
+    fi
 }
 
 get_cmd_path() {
@@ -4156,18 +4197,46 @@ init_basearch() {
 }
 
 init_confhome() {
-    # 设置 confhome
-    # 未测试
-    if false && [[ "$confhome" = http*://raw.githubusercontent.com/* ]]; then
-        repo=$(echo $confhome | cut -d/ -f4,5)
-        branch=$(echo $confhome | cut -d/ -f6)
-        # 避免脚本更新时，文件不同步造成错误
-        if [ -z "$commit" ]; then
-            commit=$(curl -L https://api.github.com/repos/$repo/git/refs/heads/$branch |
-                grep '"sha"' | grep -Eo '[0-9a-f]{40}')
+    get_confhome_from_git_checkout() {
+        local repo_root remote repo_ref git_commit
+
+        command -v git >/dev/null 2>&1 || return 1
+        repo_root=$(git -C "$(dirname "$THIS_SCRIPT")" rev-parse --show-toplevel 2>/dev/null) || return 1
+        remote=$(git -C "$repo_root" config --get remote.origin.url 2>/dev/null) || return 1
+        git_commit=${commit:-$(git -C "$repo_root" rev-parse HEAD 2>/dev/null)} || return 1
+
+        case "$remote" in
+        git@github.com:*)
+            repo_ref=${remote#git@github.com:}
+            ;;
+        ssh://git@github.com/*)
+            repo_ref=${remote#ssh://git@github.com/}
+            ;;
+        https://github.com/* | http://github.com/*)
+            repo_ref=${remote#http://github.com/}
+            repo_ref=${repo_ref#https://github.com/}
+            ;;
+        *)
+            return 1
+            ;;
+        esac
+
+        repo_ref=${repo_ref%.git}
+        [[ "$repo_ref" = */* ]] || return 1
+
+        confhome="https://raw.githubusercontent.com/$repo_ref/$git_commit"
+        if [ "$repo_ref" = "bin456789/reinstall" ]; then
+            confhome_cn="https://cnb.cool/bin456789/reinstall/-/git/raw/$git_commit"
+        else
+            confhome_cn=
         fi
-        # shellcheck disable=SC2001
-        confhome=$(echo "$confhome" | sed "s/main$/$commit/")
+    }
+
+    # 设置 confhome
+    # 如果从 git checkout 直接运行脚本，则后续拉取其它文件时锁定到同一 commit
+    if [[ "$confhome" = http*://raw.githubusercontent.com/* ]] &&
+        get_confhome_from_git_checkout; then
+        info false "Use confhome from current git checkout: $confhome"
     fi
 
     # 设置国内代理
@@ -4442,6 +4511,7 @@ fi
 long_opts=
 for o in ci installer debug minimal allow-ping force-cn help \
     add-driver: \
+    talos-siderolink: \
     hold: sleep: \
     iso: \
     image-name: \
@@ -4578,6 +4648,11 @@ while true; do
         # 转为绝对路径
         frpc_config=$(readlink -f "$frpc_config")
 
+        shift 2
+        ;;
+    --talos-siderolink)
+        [ -n "$2" ] || error_and_exit "Need value for $1"
+        talos_siderolink=${2#siderolink.api=}
         shift 2
         ;;
     --force-boot-mode)
@@ -5090,11 +5165,13 @@ elif [ "$distro" = talos ]; then
     echo "Reboot to start the installation."
     echo "Talos has no SSH login by default."
     echo "Please bootstrap and manage nodes via talosctl."
+    [ -n "$talos_siderolink" ] && echo "SideroLink join config will be injected via Talos Image Factory."
     echo
     echo "Talos 注意事项："
     echo "重启后开始安装。"
     echo "Talos 默认不支持 SSH 登录。"
     echo "请使用 talosctl 引导并管理节点。"
+    [ -n "$talos_siderolink" ] && echo "已通过 Talos Image Factory 注入 SideroLink 连接参数。"
 else
     echo "Reboot to start the installation."
 fi

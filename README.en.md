@@ -182,7 +182,8 @@ bash reinstall.sh anolis      7|8|23
 
 - For Talos, the script resolves the latest official tag first (for example `v1.12.4`), then uses a pinned release URL to download the official `metal-ARCH.raw.zst` image (with `raw.xz` fallback). Talos does not support SSH login by default. Use `talosctl` to bootstrap and manage nodes.
 - For Talos, the script does not prompt for password interactively by default. If neither `--password` nor `--ssh-key` is provided, it auto-generates a random password for installer-environment SSH.
-- Talos only supports installer-environment options: `--password`, `--ssh-key`, `--ssh-port`, `--web-port`, `--hold`, `--frpc-toml`.
+- Talos only supports installer-environment options: `--password`, `--ssh-key`, `--ssh-port`, `--web-port`, `--hold`, `--frpc-toml`, `--talos-siderolink`.
+- Talos supports `--talos-siderolink` to inject the `siderolink.api` kernel argument. The script switches to Talos Image Factory and builds a customized `metal-ARCH.raw.zst` image so the node can join Omni / SideroLink on first boot.
 - Talos does not support: `--minimal`, `--installer`, `--allow-ping`, `--rdp-port`, `--add-driver`, `--img`, `--cloud-data`, `--iso`, `--boot-wim`, `--image-name`, `--lang`, `--force-old-windows-setup`.
 
 #### Optional Parameters
@@ -192,6 +193,7 @@ bash reinstall.sh anolis      7|8|23
 - `--ssh-port PORT` Change the SSH port (for log observation during installation and for the new system)
 - `--web-port PORT` Change the Web port (for log observation during installation only)
 - `--frpc-config PATH` Add frpc for intranet tunneling. Parameter can be local filepath or HTTP URL of the configuration file.
+- `--talos-siderolink URL` Talos only. Inject the full SideroLink value, for example `grpc://omni.example.com:8090?jointoken=...`
 - `--hold 1` Reboot only into install environment, without running installer, only for SSH connect to test network connection.
 - `--hold 2` Prevent reboot after installation completes, allowing SSH login to modify system content; the system is mounted at `/target` for Debian/Kali and `/os` for other distros.
 
